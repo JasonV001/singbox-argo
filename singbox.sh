@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 
 # 鍩虹璺緞瀹氫箟
 export SCRIPT_VERSION="15"

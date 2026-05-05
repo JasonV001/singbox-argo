@@ -1,22 +1,21 @@
 #!/bin/bash
 
-# 核心环境定义
+# 鏍稿績鐜瀹氫箟
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 SINGBOX_DIR="/usr/local/etc/sing-box"
 
-# [整合方案] 解析器核心解码函数 (独立实现，不依赖外部)
+# [鏁村悎鏂规] 瑙ｆ瀽鍣ㄦ牳蹇冭В鐮佸嚱鏁?(鐙珛瀹炵幇锛屼笉渚濊禆澶栭儴)
 _url_decode() {
     local data="${1//+/ }"
     printf '%b' "${data//%/\\x}"
 }
 
 if ! command -v jq &>/dev/null; then
-    echo '{"error": "缺少 jq 依赖"}'
+    echo '{"error": "缂哄皯 jq 渚濊禆"}'
     exit 1
 fi
 
-# 解析器使用的 URL 解码统一由主脚本或独立实现提供
-_decode() { _url_decode "$1"; }
+# 瑙ｆ瀽鍣ㄤ娇鐢ㄧ殑 URL 瑙ｇ爜缁熶竴鐢变富鑴氭湰鎴栫嫭绔嬪疄鐜版彁渚?_decode() { _url_decode "$1"; }
 
 _get_param() {
     local params="$1"
@@ -53,28 +52,27 @@ _split_host_port() {
     printf '%s\t%s\n' "$host" "$port"
 }
 
-# 安全、无依赖地解码 URL Safe Base64 并且自动补齐 Padding
+# 瀹夊叏銆佹棤渚濊禆鍦拌В鐮?URL Safe Base64 骞朵笖鑷姩琛ラ綈 Padding
 _decode_base64_urlsafe() {
     local input="$1"
-    # 去除多余的换行符和无效空格
-    input=$(echo -n "$input" | tr -d ' \n\r')
+    # 鍘婚櫎澶氫綑鐨勬崲琛岀鍜屾棤鏁堢┖鏍?    input=$(echo -n "$input" | tr -d ' \n\r')
     
-    # 纯 Shell 环境下将 URL-Safe 字符 (- 和 _) 转为标准 Base64 字符 (+ 和 /)
+    # 绾?Shell 鐜涓嬪皢 URL-Safe 瀛楃 (- 鍜?_) 杞负鏍囧噯 Base64 瀛楃 (+ 鍜?/)
     local safe_str=$(echo -n "$input" | tr -- '-_' '+/')
     
-    # 智能探测和补全丢失的等于号 (Padding)
+    # 鏅鸿兘鎺㈡祴鍜岃ˉ鍏ㄤ涪澶辩殑绛変簬鍙?(Padding)
     local pad=$(( 4 - (${#safe_str} % 4) ))
     if [ "$pad" -ne 4 ]; then
         local _i=0
         while [ $_i -lt $pad ]; do safe_str+="="; _i=$((_i+1)); done
     fi
     
-    # 交给原生系统做安全的标准解码
+    # 浜ょ粰鍘熺敓绯荤粺鍋氬畨鍏ㄧ殑鏍囧噯瑙ｇ爜
     echo -n "$safe_str" | base64 -d 2>/dev/null
 }
 
 
-# 解析 VLESS
+# 瑙ｆ瀽 VLESS
 _parse_vless() {
     local link="$1"
     local host_regex='(\[[^]]+\]|[^:/?#]+)'
@@ -122,11 +120,11 @@ _parse_vless() {
     fi
 }
 
-# 解析 VMess
+# 瑙ｆ瀽 VMess
 _parse_vmess() {
     local link="${1#vmess://}"
     local decoded=$(_decode_base64_urlsafe "$link")
-    [ -z "$decoded" ] && { echo '{"error": "Base64解码失败"}'; return; }
+    [ -z "$decoded" ] && { echo '{"error": "Base64瑙ｇ爜澶辫触"}'; return; }
     
     local server=$(echo "$decoded" | jq -r '.add')
     server=$(_strip_ipv6_brackets "$server")
@@ -150,7 +148,7 @@ _parse_vmess() {
     echo "$outbound"
 }
 
-# 解析 Trojan
+# 瑙ｆ瀽 Trojan
 _parse_trojan() {
     local link="$1"
     local host_regex='(\[[^]]+\]|[^:/?#]+)'
@@ -180,7 +178,7 @@ _parse_trojan() {
     fi
 }
 
-# 解析 Shadowsocks
+# 瑙ｆ瀽 Shadowsocks
 _parse_ss() {
     local link="$1"
     local body="${link#ss://}"
@@ -190,13 +188,12 @@ _parse_ss() {
     if [[ "$body" == *"@"* ]]; then
         local userinfo="${body%@*}"
         server_port="${body#*@}"
-        # 先 URL 解码 userinfo（处理 %3A 等编码字符）
+        # 鍏?URL 瑙ｇ爜 userinfo锛堝鐞?%3A 绛夌紪鐮佸瓧绗︼級
         local decoded_userinfo=$(_url_decode "$userinfo")
         if [[ "$decoded_userinfo" == *":"* ]]; then
-            # 已经是明文 method:password 格式（或 URL 编码后的明文）
-            method_pass="$decoded_userinfo"
+            # 宸茬粡鏄槑鏂?method:password 鏍煎紡锛堟垨 URL 缂栫爜鍚庣殑鏄庢枃锛?            method_pass="$decoded_userinfo"
         else
-            # 没有冒号，可能是 base64 编码
+            # 娌℃湁鍐掑彿锛屽彲鑳芥槸 base64 缂栫爜
             method_pass=$(_decode_base64_urlsafe "$userinfo")
         fi
     else
@@ -206,7 +203,7 @@ _parse_ss() {
     fi
 
     local split_result
-    split_result=$(_split_host_port "$server_port") || { echo '{"error": "服务器地址或端口格式错误"}'; return; }
+    split_result=$(_split_host_port "$server_port") || { echo '{"error": "鏈嶅姟鍣ㄥ湴鍧€鎴栫鍙ｆ牸寮忛敊璇?}'; return; }
     local server port
     IFS=$'\t' read -r server port <<< "$split_result"
 
@@ -214,7 +211,7 @@ _parse_ss() {
         '{type:"shadowsocks", tag:"proxy", server:$s, server_port:$p, method:$m, password:$pw}'
 }
 
-# 解析 Hysteria2
+# 瑙ｆ瀽 Hysteria2
 _parse_hy2() {
     local link="$1"
     local host_regex='(\[[^]]+\]|[^:/?#]+)'
@@ -235,7 +232,7 @@ _parse_hy2() {
     fi
 }
 
-# 解析 TUIC
+# 瑙ｆ瀽 TUIC
 _parse_tuic() {
     local link="$1"
     local host_regex='(\[[^]]+\]|[^:/?#]+)'
@@ -255,7 +252,7 @@ _parse_tuic() {
     fi
 }
 
-# 解析 AnyTLS
+# 瑙ｆ瀽 AnyTLS
 _parse_anytls() {
     local link="$1"
     local host_regex='(\[[^]]+\]|[^:/?#]+)'
@@ -272,13 +269,13 @@ _parse_anytls() {
     fi
 }
 
-# 解析 SOCKS5 (支持有认证和无认证两种格式)
+# 瑙ｆ瀽 SOCKS5 (鏀寔鏈夎璇佸拰鏃犺璇佷袱绉嶆牸寮?
 _parse_socks() {
     local link="$1"
     local host_regex='(\[[^]]+\]|[^:/?#]+)'
-    # 有认证格式: socks5://user:pass@host:port#name
+    # 鏈夎璇佹牸寮? socks5://user:pass@host:port#name
     local regex_auth="socks5://([^:]+):([^@]+)@${host_regex}:([0-9]+)#?(.*)"
-    # 无认证格式: socks5://host:port#name
+    # 鏃犺璇佹牸寮? socks5://host:port#name
     local regex_noauth="socks5://${host_regex}:([0-9]+)#?(.*)"
     
     if [[ $link =~ $regex_auth ]]; then
@@ -307,5 +304,5 @@ case "$1" in
     tuic://*) _parse_tuic "$1" ;;
     anytls://*) _parse_anytls "$1" ;;
     socks5://*) _parse_socks "$1" ;;
-    *) echo "{\"error\": \"不支持的协议\"}"; exit 1 ;;
+    *) echo "{\"error\": \"涓嶆敮鎸佺殑鍗忚\"}"; exit 1 ;;
 esac
