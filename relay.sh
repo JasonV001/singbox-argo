@@ -712,8 +712,12 @@ generate_config() {
     local update_outbounds=$(jq ".outbounds = ${outbounds}" "${CONFIG_FILE}" > "$temp_config" 2>&1)
     local out_result=$?
     
+    log_debug "jq outbounds result: $out_result"
+    log_debug "outbounds: ${outbounds:0:200}..."
+    
     if [[ $out_result -ne 0 ]]; then
         log_error "更新 outbounds 失败"
+        cat "$temp_config" 2>/dev/null | head -5 | while read line; do log_error "  $line"; done
         cp "$backup_config" "${CONFIG_FILE}"
         rm -f "$temp_config" "$backup_config"
         return 1
@@ -721,6 +725,9 @@ generate_config() {
     
     local update_route=$(jq ".route = ${route_json}" "$temp_config" > "${CONFIG_FILE}" 2>&1)
     local route_result=$?
+    
+    log_debug "jq route result: $route_result"
+    log_debug "route_json: $route_json"
     
     rm -f "$temp_config" "$backup_config"
     
