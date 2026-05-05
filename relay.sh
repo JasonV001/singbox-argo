@@ -499,9 +499,10 @@ check_dependencies() {
 
 svc_start() {
     if [[ $ALPINE -eq 1 ]]; then
-        rc-service sing-box start 2>/dev/null
+        rc-service sing-box start 2>&1 | tee /dev/stderr | grep -q 'Started' && return 0 || return 1
     else
-        systemctl start sing-box
+        systemctl start sing-box 2>&1
+        return $?
     fi
 }
 
@@ -509,15 +510,18 @@ svc_stop() {
     if [[ $ALPINE -eq 1 ]]; then
         rc-service sing-box stop 2>/dev/null
     else
-        systemctl stop sing-box
+        systemctl stop sing-box 2>/dev/null
     fi
 }
 
 svc_restart() {
+    log_info "重启 sing-box 服务..."
+    
     if [[ $ALPINE -eq 1 ]]; then
-        rc-service sing-box restart 2>/dev/null
+        rc-service sing-box restart 2>&1 | tee /dev/stderr | grep -q 'Starting\|Started\|restart' && return 0 || return 1
     else
-        systemctl restart sing-box
+        systemctl restart sing-box 2>&1
+        return $?
     fi
 }
 
@@ -539,9 +543,9 @@ svc_disable() {
 
 svc_is_active() {
     if [[ $ALPINE -eq 1 ]]; then
-        rc-service sing-box status 2>/dev/null | grep -q 'started'
+        rc-service sing-box status 2>/dev/null | grep -qE 'started|running|online'
     else
-        systemctl is-active --quiet sing-box
+        systemctl is-active sing-box 2>/dev/null | grep -q 'active'
     fi
 }
 
@@ -1124,14 +1128,23 @@ manual_add_node() {
 
     if [[ -n "$inbound_json" ]] && [[ -f "${CONFIG_FILE}" ]] && command -v jq &>/dev/null; then
         local temp_config=$(mktemp -t sing-box-relay.XXXXXX)
-        if jq --argjson new_inbound "$inbound_json" '.inbounds += [$new_inbound]' "${CONFIG_FILE}" > "$temp_config" 2>/dev/null; then
-            cp "${CONFIG_FILE}" "${CONFIG_FILE}.bak" 2>/dev/null
+        local backup_config=$(mktemp -t sing-box-relay.bak.XXXXXX)
+        
+        cp "${CONFIG_FILE}" "$backup_config"
+        
+        local inbound_escaped=$(echo "$inbound_json" | jq -R . | jq -r .)
+        jq --argjson new_inbound "${inbound_escaped}" '.inbounds += [$new_inbound]' "${CONFIG_FILE}" > "$temp_config" 2>&1
+        local jq_result=$?
+        
+        if [[ $jq_result -eq 0 ]] && [[ -s "$temp_config" ]]; then
             mv "$temp_config" "${CONFIG_FILE}"
+            rm -f "$backup_config"
             save_last_success
             log_success "节点已添加: ${proto} :${port}"
             load_inbounds_from_config
         else
-            rm -f "$temp_config"
+            cp "$backup_config" "${CONFIG_FILE}"
+            rm -f "$temp_config" "$backup_config"
             log_error "添加节点失败"
             return 1
         fi
@@ -1190,11 +1203,32 @@ assign_relay_to_node() {
         return 1
     fi
 
-    if generate_config; then
-        svc_restart
-        sleep 2
-        svc_is_active && log_success "配置已应用，服务已重启" || log_warning "服务启动可能失败"
+    if ! generate_config; then
+        log_error "配置生成失败"
+        return 1
     fi
+    
+    log_info "正在重启 sing-box 服务..."
+    
+    if [[ $ALPINE -eq 1 ]]; then
+        rc-service sing-box restart 2>&1
+        sleep 2
+        if rc-service sing-box status 2>/dev/null | grep -qE 'started|running|online'; then
+            log_success "配置已应用，服务已重启"
+        else
+            log_warning "服务状态未知，请手动检查"
+        fi
+    else
+        systemctl restart sing-box 2>&1
+        sleep 2
+        if systemctl is-active sing-box 2>/dev/null | grep -q 'active'; then
+            log_success "配置已应用，服务已重启"
+        else
+            log_warning "服务状态未知，请手动检查"
+        fi
+    fi
+    
+    return 0
 }
 
 configure_node_relay() {
@@ -1387,17 +1421,35 @@ reload_config() {
     log_info "重新加载配置..."
     load_relays_from_file
     load_inbounds_from_config 2>/dev/null || true
-    if generate_config; then
-        svc_restart
+    
+    if ! generate_config; then
+        log_error "配置生成失败"
+        return 1
+    fi
+    
+    log_info "正在重启 sing-box 服务..."
+    
+    if [[ $ALPINE -eq 1 ]]; then
+        rc-service sing-box restart 2>&1
         sleep 2
-        if svc_is_active; then
-            log_success "配置已重新加载并应用"
+        if rc-service sing-box status 2>/dev/null | grep -qE 'started|running|online'; then
+            log_success "服务已重启"
         else
-            log_warning "配置已更新，但服务可能未正常启动"
+            log_warning "服务状态未知，请手动检查"
+            log_info "运行 'rc-status' 或 'systemctl status sing-box' 查看状态"
         fi
     else
-        log_error "配置重新加载失败"
+        systemctl restart sing-box 2>&1
+        sleep 2
+        if systemctl is-active sing-box 2>/dev/null | grep -q 'active'; then
+            log_success "服务已重启"
+        else
+            log_warning "服务状态未知，请手动检查"
+            log_info "运行 'systemctl status sing-box' 查看状态"
+        fi
     fi
+    
+    return 0
 }
 
 delete_relay() {
