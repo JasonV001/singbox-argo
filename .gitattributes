@@ -1,3 +1,16 @@
+# Shell scripts must use LF
 *.sh text eol=lf
+
+# Text files
 *.md text
 *.txt text
+*.yml text
+*.yaml text
+*.json text
+
+# Binary files
+*.zip binary
+*.tar.gz binary
+*.png binary
+*.jpg binary
+*.exe binary
