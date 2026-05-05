@@ -1164,6 +1164,10 @@ assign_relay_to_node() {
     fi
 }
 
+configure_node_relay() {
+    assign_relay_to_node
+}
+
 delete_relay() {
     [[ ${#RELAY_TAGS[@]} -eq 0 ]] && { log_warning "当前没有中转链接"; return 0; }
 
