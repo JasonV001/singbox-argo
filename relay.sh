@@ -1012,10 +1012,20 @@ manual_add_node() {
     echo -e "  ${GREEN}[4]${NC} ShadowTLS v3"
     echo -e "  ${GREEN}[5]${NC} HTTPS"
     echo -e "  ${GREEN}[6]${NC} AnyTLS"
+    echo -e "  ${GREEN}[7]${NC} 粘贴完整链接 (vless/vmess/trojan/ss等)"
     echo ""
-    read -p "选择协议类型 [1-6]: " proto_choice
+    read -p "选择协议类型 [1-7]: " proto_choice
 
-    [[ ! "$proto_choice" =~ ^[1-6]$ ]] && { log_error "无效选择"; return 1; }
+    [[ ! "$proto_choice" =~ ^[1-7]$ ]] && { log_error "无效选择"; return 1; }
+
+    if [[ "$proto_choice" == "7" ]]; then
+        echo ""
+        read -p "粘贴节点链接: " node_link
+        [[ -z "$node_link" ]] && { log_error "链接不能为空"; return 1; }
+        
+        link_to_inbound "$node_link"
+        return $?
+    fi
 
     local proto=""
     case $proto_choice in
@@ -1166,6 +1176,180 @@ assign_relay_to_node() {
 
 configure_node_relay() {
     assign_relay_to_node
+}
+
+link_to_inbound() {
+    local link="$1"
+    log_info "解析节点链接..."
+
+    if [[ "$link" =~ ^vless:// ]]; then
+        parse_vless_to_inbound "$link"
+    elif [[ "$link" =~ ^vmess:// ]]; then
+        parse_vmess_to_inbound "$link"
+    elif [[ "$link" =~ ^trojan:// ]]; then
+        parse_trojan_to_inbound "$link"
+    elif [[ "$link" =~ ^ss:// ]]; then
+        parse_ss_to_inbound "$link"
+    else
+        log_error "不支持的链接格式: ${link:0:20}..."
+        return 1
+    fi
+}
+
+parse_vless_to_inbound() {
+    local link="$1"
+    local data=$(echo "$link" | sed 's|vless://||')
+    
+    local uuid=$(echo "$data" | cut -d'@' -f1)
+    local rest=$(echo "$data" | cut -d'@' -f2)
+    
+    local server=$(echo "$rest" | cut -d':' -f1)
+    local port=$(echo "$rest" | cut -d':' -f2 | cut -d'?' -f1)
+    
+    local params=$(echo "$rest" | cut -d'?' -f2)
+    local sni=$(echo "$params" | tr '&' '\n' | grep '^sni=' | cut -d'=' -f2)
+    local flow=$(echo "$params" | tr '&' '\n' | grep '^flow=' | cut -d'=' -f2)
+    local security=$(echo "$params" | tr '&' '\n' | grep '^security=' | cut -d'=' -f2)
+    local fp=$(echo "$params" | tr '&' '\n' | grep '^fp=' | cut -d'=' -f2)
+    local pbk=$(echo "$params" | tr '&' '\n' | grep '^pbk=' | cut -d'=' -f2)
+    local sid=$(echo "$params" | tr '&' '\n' | grep '^sid=' | cut -d'=' -f2)
+    local name=$(echo "$link" | cut -d'#' -f2)
+    
+    [[ -z "$port" ]] && port="443"
+    [[ -z "$sni" ]] && sni="$server"
+    [[ -z "$fp" ]] && fp="chrome"
+    
+    local tag="vless-in-${port}"
+    
+    local inbound_json=""
+    if [[ "$security" == "reality" && -n "$pbk" ]]; then
+        inbound_json="{\"type\": \"vless\", \"tag\": \"${tag}\", \"listen\": \"::\", \"listen_port\": ${port}, \"users\": [{\"uuid\": \"${uuid}\", \"flow\": \"${flow}\"}], \"tls\": {\"enabled\": true, \"server_name\": \"${sni}\", \"fingerprint\": \"${fp}\", \"reality\": {\"enabled\": true, \"handshake\": {\"server\": \"${sni}\", \"server_port\": 443}, \"private_key\": \"${pbk}\", \"short_id\": [\"${sid}\"]}}}"
+    else
+        inbound_json="{\"type\": \"vless\", \"tag\": \"${tag}\", \"listen\": \"::\", \"listen_port\": ${port}, \"users\": [{\"uuid\": \"${uuid}\", \"flow\": \"${flow}\"}], \"tls\": {\"enabled\": true, \"server_name\": \"${sni}\", \"fingerprint\": \"${fp}\"}}"
+    fi
+    
+    if add_inbound_to_config "$inbound_json" "$tag" "${name:-VLESS}"; then
+        log_success "VLESS 节点添加成功"
+        return 0
+    else
+        return 1
+    fi
+}
+
+parse_vmess_to_inbound() {
+    local link="$1"
+    local base64_data=$(echo "$link" | sed 's|vmess://||')
+    local json=$(echo "$base64_data" | base64 -d 2>/dev/null)
+    
+    [[ -z "$json" ]] && { log_error "VMess 链接解码失败"; return 1; }
+    
+    local port=$(echo "$json" | jq -r '.port // "443"' 2>/dev/null)
+    local uuid=$(echo "$json" | jq -r '.id // ""' 2>/dev/null)
+    local sni=$(echo "$json" | jq -r '.host // ""' 2>/dev/null)
+    local type=$(echo "$json" | jq -r '.net // "tcp"' 2>/dev/null)
+    local name=$(echo "$json" | jq -r '.ps // "VMess"' 2>/dev/null)
+    
+    [[ -z "$port" || "$port" == "null" ]] && port="443"
+    [[ -z "$sni" || "$sni" == "null" ]] && sni="example.com"
+    
+    local tag="vmess-in-${port}"
+    local inbound_json="{\"type\": \"vmess\", \"tag\": \"${tag}\", \"listen\": \"::\", \"listen_port\": ${port}, \"users\": [{\"uuid\": \"${uuid}\"}]}"
+    
+    if add_inbound_to_config "$inbound_json" "$tag" "$name"; then
+        log_success "VMess 节点添加成功"
+        return 0
+    else
+        return 1
+    fi
+}
+
+parse_trojan_to_inbound() {
+    local link="$1"
+    local data=$(echo "$link" | sed 's|trojan://||')
+    
+    local password=$(echo "$data" | cut -d'@' -f1)
+    local rest=$(echo "$data" | cut -d'@' -f2)
+    
+    local server=$(echo "$rest" | cut -d':' -f1)
+    local port=$(echo "$rest" | cut -d':' -f2 | cut -d'?' -f1)
+    local params=$(echo "$rest" | cut -d'?' -f2)
+    local sni=$(echo "$params" | tr '&' '\n' | grep '^sni=' | cut -d'=' -f2)
+    local name=$(echo "$link" | cut -d'#' -f2)
+    
+    [[ -z "$port" ]] && port="443"
+    [[ -z "$sni" ]] && sni="$server"
+    
+    local tag="trojan-in-${port}"
+    local inbound_json="{\"type\": \"trojan\", \"tag\": \"${tag}\", \"listen\": \"::\", \"listen_port\": ${port}, \"users\": [{\"password\": \"${password}\"}], \"tls\": {\"enabled\": true, \"server_name\": \"${sni}\"}}"
+    
+    if add_inbound_to_config "$inbound_json" "$tag" "${name:-Trojan}"; then
+        log_success "Trojan 节点添加成功"
+        return 0
+    else
+        return 1
+    fi
+}
+
+parse_ss_to_inbound() {
+    local link="$1"
+    local data=$(echo "$link" | sed 's|ss://||')
+    local name=$(echo "$data" | cut -d'#' -f2)
+    data=$(echo "$data" | cut -d'#' -f1)
+    
+    local decoded=$(echo "$data" | base64 -d 2>/dev/null)
+    [[ -z "$decoded" ]] && { log_error "Shadowsocks 链接解码失败"; return 1; }
+    
+    local method=$(echo "$decoded" | cut -d':' -f1)
+    local rest=$(echo "$decoded" | cut -d':' -f2)
+    
+    local password=$(echo "$rest" | cut -d'@' -f1)
+    local server_port=$(echo "$rest" | cut -d'@' -f2)
+    
+    local server=$(echo "$server_port" | cut -d':' -f1)
+    local port=$(echo "$server_port" | cut -d':' -f2)
+    
+    [[ -z "$port" ]] && port="8388"
+    
+    local tag="ss-in-${port}"
+    local inbound_json="{\"type\": \"shadowsocks\", \"tag\": \"${tag}\", \"listen\": \"::\", \"listen_port\": ${port}, \"users\": [{\"method\": \"${method}\", \"password\": \"${password}\"}]}"
+    
+    if add_inbound_to_config "$inbound_json" "$tag" "${name:-Shadowsocks}"; then
+        log_success "Shadowsocks 节点添加成功"
+        return 0
+    else
+        return 1
+    fi
+}
+
+add_inbound_to_config() {
+    local inbound_json="$1"
+    local tag="$2"
+    local name="$3"
+    
+    if [[ ! -f "${CONFIG_FILE}" ]]; then
+        log_error "配置文件不存在: ${CONFIG_FILE}"
+        return 1
+    fi
+    
+    if ! command -v jq &>/dev/null; then
+        log_error "jq 未安装"
+        return 1
+    fi
+    
+    local temp_config=$(mktemp -t sing-box-relay.XXXXXX)
+    
+    if jq --argjson new_inbound "$inbound_json" '.inbounds += [$new_inbound]' "${CONFIG_FILE}" > "$temp_config" 2>/dev/null; then
+        cp "${CONFIG_FILE}" "${CONFIG_FILE}.bak" 2>/dev/null
+        mv "$temp_config" "${CONFIG_FILE}"
+        save_last_success
+        log_success "节点已添加: ${name}"
+        load_inbounds_from_config
+        return 0
+    else
+        rm -f "$temp_config"
+        log_error "添加节点失败"
+        return 1
+    fi
 }
 
 reload_config() {
