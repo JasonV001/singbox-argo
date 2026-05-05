@@ -1445,3 +1445,92 @@ uninstall_relay_script() {
     echo ""
     echo -e "${YELLOW}注意: 不会删除节点配置和 sing-box 主程序${NC}"
     echo ""
+
+    read -p "确认卸载? (y/N): " confirm
+    [[ ! "$confirm" =~ ^[Yy]$ ]] && { print_info "取消卸载"; return; }
+
+    print_info "开始卸载..."
+
+    svc_stop 2>/dev/null
+
+    rm -f /usr/local/bin/zz 2>/dev/null
+    rm -f "${CONFIG_DIR}/relay.sh" 2>/dev/null
+    rm -f "${INSTALL_FLAG}" 2>/dev/null
+    rm -f "${PATH_CONFIG_FILE}" 2>/dev/null
+    rm -f "${LAST_SUCCESS_FILE}" 2>/dev/null
+    rm -f "${RECOVERY_HISTORY_FILE}" 2>/dev/null
+
+    print_success "卸载完成!"
+}
+
+parse_link() {
+    local link="$1"
+    [[ -z "$link" ]] && { log_error "链接为空"; return 1; }
+
+    local result=1
+
+    if [[ "$link" =~ ^socks5?:// ]]; then
+        parse_socks_link "$link" && result=0
+    elif [[ "$link" =~ ^https?:// ]]; then
+        parse_http_link "$link" && result=0
+    elif [[ "$link" =~ ^ss:// ]]; then
+        parse_ss_link "$link" && result=0
+    elif [[ "$link" =~ ^vmess:// ]]; then
+        parse_vmess_link "$link" && result=0
+    elif [[ "$link" =~ ^vless:// ]]; then
+        parse_vless_link "$link" && result=0
+    elif [[ "$link" =~ ^trojan:// ]]; then
+        parse_trojan_link "$link" && result=0
+    elif [[ "$link" =~ ^hysteria2:// ]]; then
+        parse_hysteria2_link "$link" && result=0
+    else
+        log_error "不支持的链接格式"
+    fi
+
+    return $result
+}
+
+main_menu() {
+    local choice
+    while true; do
+        show_main_menu
+        read -p "请选择 [0-8]: " choice
+        case $choice in
+            1) add_relay_link ;;
+            2) manual_add_node ;;
+            3) configure_node_relay ;;
+            4) delete_relay ;;
+            5) show_relay_config ;;
+            6) show_nodes ;;
+            7) reload_config ;;
+            8) set_custom_path ;;
+            0) echo "再见!"; exit 0 ;;
+            *) print_error "无效选择" ;;
+        esac
+        echo ""
+        read -p "按回车继续..."
+    done
+}
+
+initialize_and_run() {
+    detect_system
+
+    if [[ $# -gt 0 ]]; then
+        case "$1" in
+            install) install_relay_script; exit 0 ;;
+            uninstall) uninstall_relay_script; exit 0 ;;
+            detect) detect_config_paths; validate_config_file "${CONFIG_FILE}"; exit $? ;;
+            list) load_inbounds_from_config; show_nodes; exit 0 ;;
+            repair) auto_recovery; exit $? ;;
+            add) shift; add_relay_link "$@"; exit $? ;;
+            *) echo "未知参数: $1"; echo "使用 -h 查看帮助"; exit 1 ;;
+        esac
+    fi
+
+    auto_recovery || true
+    load_relays_from_file
+    load_inbounds_from_config 2>/dev/null || true
+    main_menu
+}
+
+initialize_and_run "$@"
