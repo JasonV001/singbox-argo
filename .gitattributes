@@ -1,15 +1,3 @@
-# 强制所有 shell 脚本使用 LF
 *.sh text eol=lf
-
-# 文本文件
 *.md text
 *.txt text
-*.yml text
-*.yaml text
-*.json text
-
-# 二进制文件
-*.zip binary
-*.tar.gz binary
-*.png binary
-*.jpg binary
