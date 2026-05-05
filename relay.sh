@@ -10,9 +10,14 @@ PURPLE='\033[0;35m'
 NC='\033[0m'
 
 if [[ ! -x "$0" ]]; then
-    echo "错误: 脚本缺少执行权限"
-    echo "请运行: chmod +x $0"
-    exit 1
+    echo "警告: 脚本缺少执行权限，尝试自动修复..."
+    chmod +x "$0" 2>/dev/null
+    if [[ ! -x "$0" ]]; then
+        echo "错误: 无法自动添加执行权限"
+        echo "请手动运行: chmod +x $0"
+        exit 1
+    fi
+    echo "执行权限已修复"
 fi
 
 DEFAULT_CONFIG_FILE="/etc/sing-box/config.json"
