@@ -1,161 +1,163 @@
 #!/bin/bash
 # =============================================================================
-# Linux 鐜妫€鏌ュ伐鍏?# 鍔熻兘锛氭鏌ヨ剼鏈繍琛屾墍闇€鐨勬墍鏈変緷璧栧拰鐜
+# Linux 环境检查工具
+# 功能：检查脚本运行所需的所有依赖和环境
 # =============================================================================
 
 echo "========================================"
-echo "  Linux 鐜妫€鏌ュ伐鍏?
+echo "  Linux 环境检查工具"
 echo "========================================"
 echo ""
 
-# 鐘舵€佸彉閲?OK=0
+# 状态变量
+OK=0
 WARN=0
 ERROR=0
 
-echo "馃搳 1. 绯荤粺淇℃伅"
+echo "📊 1. 系统信息"
 echo "   -----------------------------------"
 if [ -f /etc/os-release ]; then
     OS_NAME=$(grep -E '^NAME=' /etc/os-release | cut -d'"' -f2 2>/dev/null || echo "Unknown")
     OS_VER=$(grep -E '^VERSION_ID=' /etc/os-release | cut -d'"' -f2 2>/dev/null || echo "Unknown")
-    echo "   鎿嶄綔绯荤粺: $OS_NAME"
-    echo "   绯荤粺鐗堟湰: $OS_VER"
+    echo "   操作系统: $OS_NAME"
+    echo "   系统版本: $OS_VER"
     OK=$((OK+1))
 else
-    echo "   鈿狅笍 鏃犳硶妫€娴?/etc/os-release"
+    echo "   ⚠️ 无法检测 /etc/os-release"
     WARN=$((WARN+1))
 fi
 
-echo "   鍐呮牳鐗堟湰: $(uname -r)"
-echo "   绯荤粺鏋舵瀯: $(uname -m)"
+echo "   内核版本: $(uname -r)"
+echo "   系统架构: $(uname -m)"
 echo ""
 
-echo "馃洜锔?2. 鍩虹宸ュ叿妫€鏌?
+echo "🛠️ 2. 基础工具检查"
 echo "   -----------------------------------"
 check_tool() {
     local name="$1"
     local desc="$2"
     if command -v "$name" &>/dev/null; then
-        echo "   鉁?$name: OK ($desc)"
+        echo "   ✅ $name: OK ($desc)"
         OK=$((OK+1))
     else
-        echo "   鉂?$name: NOT FOUND ($desc)"
+        echo "   ❌ $name: NOT FOUND ($desc)"
         ERROR=$((ERROR+1))
     fi
 }
 
-check_tool "bash" "鑴氭湰瑙ｉ噴鍣?
-check_tool "wget" "涓嬭浇鏂囦欢"
-check_tool "curl" "HTTP璇锋眰"
-check_tool "sed" "鏂囨湰澶勭悊"
-check_tool "grep" "鏂囨湰鎼滅储"
-check_tool "awk" "鏂囨湰澶勭悊"
-check_tool "mktemp" "涓存椂鏂囦欢"
-check_tool "chmod" "鏉冮檺璁剧疆"
-check_tool "cp" "鏂囦欢澶嶅埗"
-check_tool "mv" "鏂囦欢绉诲姩"
-check_tool "rm" "鏂囦欢鍒犻櫎"
-check_tool "mkdir" "鍒涘缓鐩綍"
-check_tool "dirname" "璺緞澶勭悊"
-check_tool "readlink" "璺緞澶勭悊"
-check_tool "chmod" "鏉冮檺璁剧疆"
-check_tool "cat" "鏌ョ湅鏂囦欢"
+check_tool "bash" "脚本解释器"
+check_tool "wget" "下载文件"
+check_tool "curl" "HTTP请求"
+check_tool "sed" "文本处理"
+check_tool "grep" "文本搜索"
+check_tool "awk" "文本处理"
+check_tool "mktemp" "临时文件"
+check_tool "chmod" "权限设置"
+check_tool "cp" "文件复制"
+check_tool "mv" "文件移动"
+check_tool "rm" "文件删除"
+check_tool "mkdir" "创建目录"
+check_tool "dirname" "路径处理"
+check_tool "readlink" "路径处理"
+check_tool "chmod" "权限设置"
+check_tool "cat" "查看文件"
 echo ""
 
-echo "馃摝 3. 鍘嬬缉宸ュ叿妫€鏌?
+echo "📦 3. 压缩工具检查"
 echo "   -----------------------------------"
 check_archive_tool() {
     local name="$1"
     local desc="$2"
     if command -v "$name" &>/dev/null; then
-        echo "   鉁?$name: OK ($desc)"
+        echo "   ✅ $name: OK ($desc)"
         OK=$((OK+1))
     else
-        echo "   鈿狅笍 $name: NOT FOUND ($desc)"
+        echo "   ⚠️ $name: NOT FOUND ($desc)"
         WARN=$((WARN+1))
     fi
 }
 
-check_archive_tool "unzip" "瑙ｅ帇 ZIP"
-check_archive_tool "tar" "瑙ｅ帇 TAR/GZ"
-check_archive_tool "gzip" "GZ鍘嬬缉"
-check_archive_tool "gunzip" "GZ瑙ｅ帇"
+check_archive_tool "unzip" "解压 ZIP"
+check_archive_tool "tar" "解压 TAR/GZ"
+check_archive_tool "gzip" "GZ压缩"
+check_archive_tool "gunzip" "GZ解压"
 echo ""
 
-echo "馃敡 4. 寮€鍙戝伐鍏凤紙鍙€夛級"
+echo "🔧 4. 开发工具（可选）"
 echo "   -----------------------------------"
 check_optional_tool() {
     local name="$1"
     local desc="$2"
     if command -v "$name" &>/dev/null; then
-        echo "   鉁?$name: OK ($desc)"
+        echo "   ✅ $name: OK ($desc)"
         OK=$((OK+1))
     else
-        echo "   鈿狅笍 $name: NOT FOUND ($desc)"
+        echo "   ⚠️ $name: NOT FOUND ($desc)"
         WARN=$((WARN+1))
     fi
 }
 
-check_optional_tool "git" "鐗堟湰鎺у埗"
-check_optional_tool "python3" "鑴氭湰杈呭姪"
-check_optional_tool "base64" "缂栫爜宸ュ叿"
+check_optional_tool "git" "版本控制"
+check_optional_tool "python3" "脚本辅助"
+check_optional_tool "base64" "编码工具"
 echo ""
 
-echo "馃搧 5. 鐩綍鍜屾潈闄愭鏌?
+echo "📁 5. 目录和权限检查"
 echo "   -----------------------------------"
 check_dir() {
     local path="$1"
     local desc="$2"
     if [ -d "$path" ]; then
         if [ -w "$path" ]; then
-            echo "   鉁?$path: OK ($desc - 鍙啓)"
+            echo "   ✅ $path: OK ($desc - 可写)"
             OK=$((OK+1))
         else
-            echo "   鈿狅笍 $path: OK 浣嗕笉鍙啓 ($desc)"
+            echo "   ⚠️ $path: OK 但不可写 ($desc)"
             WARN=$((WARN+1))
         fi
     else
-        echo "   鈩癸笍 $path: 灏嗙敱鑴氭湰鍒涘缓 ($desc)"
+        echo "   ℹ️ $path: 将由脚本创建 ($desc)"
     fi
 }
 
-check_dir "/tmp" "涓存椂鏂囦欢"
-check_dir "/usr/local/bin" "浜岃繘鍒舵枃浠?
-check_dir "/usr/local/etc" "閰嶇疆鏂囦欢"
-check_dir "/opt" "杞欢瀹夎"
+check_dir "/tmp" "临时文件"
+check_dir "/usr/local/bin" "二进制文件"
+check_dir "/usr/local/etc" "配置文件"
+check_dir "/opt" "软件安装"
 echo ""
 
-echo "鈿欙笍 6. 绯荤粺绠＄悊妫€鏌?
+echo "⚙️ 6. 系统管理检查"
 echo "   -----------------------------------"
 if command -v systemctl &>/dev/null; then
-    echo "   鉁?systemctl: Systemd 绯荤粺绠＄悊"
+    echo "   ✅ systemctl: Systemd 系统管理"
     OK=$((OK+1))
 elif [ -d /etc/init.d ]; then
-    echo "   鉁?OpenRC/SysV init: 妫€娴嬪埌"
+    echo "   ✅ OpenRC/SysV init: 检测到"
     OK=$((OK+1))
 else
-    echo "   鈿狅笍 鏈娴嬪埌鏍囧噯 init 绯荤粺"
+    echo "   ⚠️ 未检测到标准 init 系统"
     WARN=$((WARN+1))
 fi
 
 if [ -f /etc/os-release ] && grep -qi alpine /etc/os-release; then
-    echo "   鈩癸笍 Alpine 妫€娴? 鐗规畩澶勭悊宸插噯澶?
+    echo "   ℹ️ Alpine 检测: 特殊处理已准备"
 fi
 echo ""
 
-echo "馃寪 7. 缃戠粶杩炴帴妫€鏌?
+echo "🌐 7. 网络连接检查"
 echo "   -----------------------------------"
 check_connectivity() {
     local url="$1"
     local name="$2"
     if curl -I -s --connect-timeout 5 "$url" &>/dev/null; then
-        echo "   鉁?$name: 鍙闂?
+        echo "   ✅ $name: 可访问"
         OK=$((OK+1))
     else
         if wget --spider --timeout=5 "$url" 2>/dev/null; then
-            echo "   鉁?$name: 鍙闂?
+            echo "   ✅ $name: 可访问"
             OK=$((OK+1))
         else
-            echo "   鉂?$name: 鏃犳硶璁块棶锛堝彲鑳介渶瑕佷唬鐞嗭級"
+            echo "   ❌ $name: 无法访问（可能需要代理）"
             ERROR=$((ERROR+1))
         fi
     fi
@@ -165,39 +167,39 @@ check_connectivity "https://github.com" "GitHub"
 check_connectivity "https://api.github.com" "GitHub API"
 echo ""
 
-echo "馃攼 8. 鐢ㄦ埛鏉冮檺妫€鏌?
+echo "🔐 8. 用户权限检查"
 echo "   -----------------------------------"
 if [ "$(id -u)" = "0" ]; then
-    echo "   鉁?鐢ㄦ埛: root (鎺ㄨ崘)"
+    echo "   ✅ 用户: root (推荐)"
     OK=$((OK+1))
 else
-    echo "   鈿狅笍 鐢ㄦ埛: $(whoami) (闈?root锛屽彲鑳介渶瑕?sudo)"
+    echo "   ⚠️ 用户: $(whoami) (非 root，可能需要 sudo)"
     WARN=$((WARN+1))
     if command -v sudo &>/dev/null; then
-        echo "   鉁?sudo: 鍙敤"
+        echo "   ✅ sudo: 可用"
         OK=$((OK+1))
     else
-        echo "   鉂?sudo: 涓嶅彲鐢?
+        echo "   ❌ sudo: 不可用"
         ERROR=$((ERROR+1))
     fi
 fi
 echo ""
 
 echo "========================================"
-echo "  妫€鏌ョ粨鏋滄憳瑕?
+echo "  检查结果摘要"
 echo "========================================"
-echo "   鉁?閫氳繃: $OK"
-echo "   鈿狅笍 璀﹀憡: $WARN"
-echo "   鉂?閿欒: $ERROR"
+echo "   ✅ 通过: $OK"
+echo "   ⚠️ 警告: $WARN"
+echo "   ❌ 错误: $ERROR"
 echo ""
 
 if [ $ERROR -eq 0 ]; then
-    echo "馃帀 澶浜嗭紒鎵€鏈夊叧閿鏌ラ€氳繃锛?
-    echo "鉁?鑴氭湰鍙互姝ｅ父杩愯"
+    echo "🎉 太棒了！所有关键检查通过！"
+    echo "✅ 脚本可以正常运行"
 else
-    echo "鈿狅笍 鏈変竴浜涢棶棰橀渶瑕佽В鍐?
+    echo "⚠️ 有一些问题需要解决"
     echo ""
-    echo "寤鸿鐨勪慨澶嶅懡浠わ細"
+    echo "建议的修复命令："
     echo "----------------------------------------"
     
     if ! command -v bash &>/dev/null; then
@@ -216,12 +218,12 @@ else
         fi
     fi
     echo ""
-    echo "杩愯淇鍛戒护鍚庯紝閲嶆柊杩愯姝ゆ鏌ヨ剼鏈?
+    echo "运行修复命令后，重新运行此检查脚本"
 fi
 
 echo ""
 echo "========================================"
-echo "  妫€鏌ュ畬鎴愶紒"
+echo "  检查完成！"
 echo "========================================"
 echo ""
 

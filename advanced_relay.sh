@@ -1,51 +1,51 @@
 #!/bin/bash
 
-# 鏍稿績鐜瀹氫箟
+# 核心环境定义
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 SINGBOX_DIR="/usr/local/etc/sing-box"
 SINGBOX_BIN="/usr/local/bin/sing-box"
 GITHUB_RAW_BASE="https://raw.githubusercontent.com/0xdabiaoge/singbox-lite/main"
 
-# 棰滆壊瀹氫箟
+# 颜色定义
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-# 鎵撳嵃鍑芥暟
-_info() { echo -e "${CYAN}[淇℃伅] $1${NC}" >&2; }
-_error() { echo -e "${RED}[閿欒] $1${NC}" >&2; }
-_success() { echo -e "${GREEN}[鎴愬姛] $1${NC}" >&2; }
-_warn() { echo -e "${YELLOW}[娉ㄦ剰] $1${NC}" >&2; }
+# 打印函数
+_info() { echo -e "${CYAN}[信息] $1${NC}" >&2; }
+_error() { echo -e "${RED}[错误] $1${NC}" >&2; }
+_success() { echo -e "${GREEN}[成功] $1${NC}" >&2; }
+_warn() { echo -e "${YELLOW}[注意] $1${NC}" >&2; }
 
-# URL缂栫爜
+# URL编码
 _url_encode() {
     printf '%s' "$1" | jq -sRr @uri
 }
 
-# 鍏ㄥ眬鍙橀噺
+# 全局变量
 YQ_BINARY="/usr/local/bin/yq"
 RELAY_AUX_DIR="${SINGBOX_DIR}"
 RELAY_CONFIG_FILE="${RELAY_AUX_DIR}/relay.json"
 RELAY_CLASH_YAML="${RELAY_AUX_DIR}/clash.yaml"
 RELAY_FILE="${RELAY_AUX_DIR}/relays.conf"
 
-# 涓浆閰嶇疆鏁扮粍
+# 中转配置数组
 RELAY_TAGS=()
 RELAY_JSONS=()
 RELAY_DESCS=()
 
-# 鑺傜偣鏁扮粍
+# 节点数组
 INBOUND_TAGS=()
 INBOUND_PORTS=()
 INBOUND_PROTOS=()
 INBOUND_RELAY_TAGS=()
 
-# 瀹夎yq
+# 安装yq
 _install_yq() {
     if ! command -v yq &>/dev/null; then
-        _info "瀹夎 yq..."
+        _info "安装 yq..."
         local arch=$(uname -m)
         case $arch in x86_64|amd64) arch='amd64' ;; aarch64|arm64) arch='arm64' ;; *) arch='amd64' ;; esac
         wget -qO "$YQ_BINARY" "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_$arch"
@@ -53,7 +53,8 @@ _install_yq() {
     fi
 }
 
-# 鐜妫€娴?_detect_init_system() {
+# 环境检测
+_detect_init_system() {
     if [ -f /sbin/openrc-run ] || command -v rc-service &>/dev/null; then
         INIT_SYSTEM="openrc"
     elif command -v systemctl &>/dev/null; then
@@ -64,14 +65,15 @@ _install_yq() {
 }
 [ -z "$INIT_SYSTEM" ] && _detect_init_system
 
-# 鍏綉IP鑾峰彇
+# 公网IP获取
 _get_public_ip() {
     local ip=$(timeout 5 curl -s4 --max-time 2 icanhazip.com 2>/dev/null || timeout 5 curl -s4 --max-time 2 ipinfo.io/ip 2>/dev/null)
     [ -z "$ip" ] && ip=$(timeout 5 curl -s6 --max-time 2 icanhazip.com 2>/dev/null)
     echo "$ip"
 }
 
-# 绔彛鍐茬獊妫€娴?_check_port_occupied() {
+# 端口冲突检测
+_check_port_occupied() {
     local port=$1
     if command -v ss &>/dev/null; then
         ss -lnpt | grep -q ":${port} " && return 0
@@ -81,16 +83,16 @@ _get_public_ip() {
     return 1
 }
 
-# 鍘熷瓙淇敼JSON
+# 原子修改JSON
 _atomic_modify_json() {
     local file="$1" filter="$2"
     [ ! -f "$file" ] && return 1
     local tmp="${file}.tmp"
     if jq "$filter" "$file" > "$tmp"; then mv "$tmp" "$file"
-    else _error "淇敼JSON澶辫触: $file"; rm -f "$tmp"; return 1; fi
+    else _error "修改JSON失败: $file"; rm -f "$tmp"; return 1; fi
 }
 
-# 鏈嶅姟绠＄悊
+# 服务管理
 _manage_service() {
     local action="$1"
     local service_pkg="sing-box"
@@ -102,15 +104,15 @@ _manage_service() {
 }
 
 # ============================================================
-# install.sh 涓殑涓浆閾炬帴瑙ｆ瀽鍑芥暟
+# install.sh 中的中转链接解析函数
 # ============================================================
 
 save_relays_to_file() {
     mkdir -p "$(dirname "${RELAY_FILE}")"
     
     cat > "${RELAY_FILE}" << EOF
-# Sing-box 涓浆閰嶇疆鏂囦欢
-# 鏍煎紡: TAG|DESCRIPTION|JSON_CONFIG
+# Sing-box 中转配置文件
+# 格式: TAG|DESCRIPTION|JSON_CONFIG
 EOF
     
     for i in "${!RELAY_TAGS[@]}"; do
@@ -147,12 +149,12 @@ parse_socks_link() {
     local link="$1"
     
     if [[ "$link" =~ ^socks://([A-Za-z0-9+/=]+) ]]; then
-        _info "妫€娴嬪埌 base64 缂栫爜鐨?SOCKS 閾炬帴锛屾鍦ㄨВ鐮?.."
+        _info "检测到 base64 编码的 SOCKS 链接，正在解码..."
         local base64_part="${BASH_REMATCH[1]}"
         local decoded=$(echo "$base64_part" | base64 -d 2>/dev/null)
         
         if [[ -z "$decoded" ]]; then
-            _error "base64 瑙ｇ爜澶辫触"
+            _error "base64 解码失败"
             return 1
         fi
         
@@ -174,7 +176,7 @@ parse_socks_link() {
         local port=$(echo "$server_port" | cut -d':' -f2)
         
         if ! [[ "$port" =~ ^[0-9]+$ ]]; then
-            _error "绔彛鏃犳晥: ${port}"
+            _error "端口无效: ${port}"
             return 1
         fi
         
@@ -188,13 +190,13 @@ parse_socks_link() {
   \"username\": \"${username}\",
   \"password\": \"${password}\"
 }"
-        relay_desc="SOCKS5 ${server}:${port} (璁よ瘉)"
+        relay_desc="SOCKS5 ${server}:${port} (认证)"
     else
         local server=$(echo "$data" | cut -d':' -f1)
         local port=$(echo "$data" | cut -d':' -f2)
         
         if ! [[ "$port" =~ ^[0-9]+$ ]]; then
-            _error "绔彛鏃犳晥: ${port}"
+            _error "端口无效: ${port}"
             return 1
         fi
         
@@ -214,7 +216,7 @@ parse_socks_link() {
     RELAY_DESCS+=("$relay_desc")
     
     save_relays_to_file
-    _success "SOCKS5 涓浆宸叉坊鍔? ${relay_desc}"
+    _success "SOCKS5 中转已添加: ${relay_desc}"
 }
 
 parse_http_link() {
@@ -246,7 +248,7 @@ parse_http_link() {
   \"password\": \"${password}\",
   \"tls\": {\"enabled\": ${tls}}
 }"
-        relay_desc="${protocol^^} ${server}:${port} (璁よ瘉)"
+        relay_desc="${protocol^^} ${server}:${port} (认证)"
     else
         local server=$(echo "$data" | cut -d':' -f1)
         local port=$(echo "$data" | cut -d':' -f2 | cut -d'/' -f1 | cut -d'#' -f1 | cut -d'?' -f1)
@@ -266,7 +268,7 @@ parse_http_link() {
     RELAY_DESCS+=("$relay_desc")
     
     save_relays_to_file
-    _success "HTTP(S) 涓浆宸叉坊鍔? ${relay_desc}"
+    _success "HTTP(S) 中转已添加: ${relay_desc}"
 }
 
 parse_ss_link() {
@@ -281,7 +283,7 @@ parse_ss_link() {
         
         local decoded=$(echo "$userinfo" | base64 -d 2>/dev/null)
         if [[ -z "$decoded" ]]; then
-            _error "Shadowsocks 閾炬帴瑙ｇ爜澶辫触"
+            _error "Shadowsocks 链接解码失败"
             return 1
         fi
         
@@ -304,9 +306,9 @@ parse_ss_link() {
         RELAY_DESCS+=("$relay_desc")
         
         save_relays_to_file
-        _success "Shadowsocks 涓浆宸叉坊鍔? ${relay_desc}"
+        _success "Shadowsocks 中转已添加: ${relay_desc}"
     else
-        _error "Shadowsocks 閾炬帴鏍煎紡閿欒"
+        _error "Shadowsocks 链接格式错误"
         return 1
     fi
 }
@@ -317,12 +319,12 @@ parse_vmess_link() {
     local json=$(echo "$base64_data" | base64 -d 2>/dev/null)
     
     if [[ -z "$json" ]]; then
-        _error "VMess 閾炬帴瑙ｇ爜澶辫触"
+        _error "VMess 链接解码失败"
         return 1
     fi
     
     if ! command -v jq &>/dev/null; then
-        _error "闇€瑕?jq 宸ュ叿鏉ヨВ鏋?VMess 閾炬帴"
+        _error "需要 jq 工具来解析 VMess 链接"
         return 1
     fi
     
@@ -349,7 +351,7 @@ parse_vmess_link() {
     RELAY_DESCS+=("$relay_desc")
     
     save_relays_to_file
-    _success "VMess 涓浆宸叉坊鍔? ${relay_desc}"
+    _success "VMess 中转已添加: ${relay_desc}"
 }
 
 parse_vless_link() {
@@ -401,7 +403,7 @@ parse_vless_link() {
     RELAY_DESCS+=("$relay_desc")
     
     save_relays_to_file
-    _success "VLESS 涓浆宸叉坊鍔? ${relay_desc}"
+    _success "VLESS 中转已添加: ${relay_desc}"
 }
 
 parse_trojan_link() {
@@ -437,11 +439,11 @@ parse_trojan_link() {
     RELAY_DESCS+=("$relay_desc")
     
     save_relays_to_file
-    _success "Trojan 涓浆宸叉坊鍔? ${relay_desc}"
+    _success "Trojan 中转已添加: ${relay_desc}"
 }
 
 # ============================================================
-# 涓浆閰嶇疆鑿滃崟 (鏉ヨ嚜 install.sh)
+# 中转配置菜单 (来自 install.sh)
 # ============================================================
 
 setup_relay() {
@@ -449,77 +451,77 @@ setup_relay() {
     
     while true; do
         echo ""
-        echo -e "${CYAN}鈺斺晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?{NC}"
-        echo -e "${CYAN}鈺?             ${GREEN}涓浆閰嶇疆鑿滃崟${CYAN}                  鈺?{NC}"
-        echo -e "${CYAN}鈺氣晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?{NC}"
+        echo -e "${CYAN}╔═══════════════════════════════════════════════════════╗${NC}"
+        echo -e "${CYAN}║              ${GREEN}中转配置菜单${CYAN}                  ║${NC}"
+        echo -e "${CYAN}╚═══════════════════════════════════════════════════════╝${NC}"
         echo ""
         
         if [[ ${#RELAY_TAGS[@]} -gt 0 ]]; then
-            echo -e "${YELLOW}褰撳墠涓浆鍒楄〃:${NC}"
+            echo -e "${YELLOW}当前中转列表:${NC}"
             for i in "${!RELAY_TAGS[@]}"; do
                 idx=$((i+1))
                 echo -e "  ${GREEN}[${idx}]${NC} ${RELAY_DESCS[$i]}"
             done
             echo ""
         else
-            echo -e "${YELLOW}褰撳墠娌℃湁閰嶇疆涓浆${NC}"
+            echo -e "${YELLOW}当前没有配置中转${NC}"
             echo ""
         fi
         
-        echo -e "  ${GREEN}[1]${NC} 娣诲姞鏂扮殑涓浆閾炬帴"
-        echo -e "  ${GREEN}[2]${NC} 涓鸿妭鐐归厤缃腑杞?
-        echo -e "  ${GREEN}[3]${NC} 鍒犻櫎涓浆閾炬帴"
-        echo -e "  ${GREEN}[4]${NC} 娓呯┖鎵€鏈変腑杞?
-        echo -e "  ${GREEN}[0]${NC} 杩斿洖涓昏彍鍗?
+        echo -e "  ${GREEN}[1]${NC} 添加新的中转链接"
+        echo -e "  ${GREEN}[2]${NC} 为节点配置中转"
+        echo -e "  ${GREEN}[3]${NC} 删除中转链接"
+        echo -e "  ${GREEN}[4]${NC} 清空所有中转"
+        echo -e "  ${GREEN}[0]${NC} 返回主菜单"
         echo ""
-        read -p "璇烽€夋嫨 [0-4]: " r_choice
+        read -p "请选择 [0-4]: " r_choice
         
         case $r_choice in
             1)
                 echo ""
-                echo -e "${CYAN}鈺斺晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?{NC}"
-                echo -e "${CYAN}鈺?         ${GREEN}鏀寔鐨勪腑杞崗璁牸寮?{CYAN}              鈺?{NC}"
-                echo -e "${CYAN}鈺氣晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?{NC}"
+                echo -e "${CYAN}╔═══════════════════════════════════════════════════════╗${NC}"
+                echo -e "${CYAN}║          ${GREEN}支持的中转协议格式${CYAN}              ║${NC}"
+                echo -e "${CYAN}╚═══════════════════════════════════════════════════════╝${NC}"
                 echo ""
-                echo -e "${GREEN}1. SOCKS5 浠ｇ悊${NC}"
-                echo -e "   ${YELLOW}鏍煎紡:${NC} socks5://[鐢ㄦ埛鍚?瀵嗙爜@]鏈嶅姟鍣?绔彛"
-                echo -e "   ${CYAN}绀轰緥:${NC}"
+                echo -e "${GREEN}1. SOCKS5 代理${NC}"
+                echo -e "   ${YELLOW}格式:${NC} socks5://[用户名:密码@]服务器:端口"
+                echo -e "   ${CYAN}示例:${NC}"
                 echo -e "     socks5://user:pass@1.2.3.4:1080"
-                echo -e "     socks5://1.2.3.4:1080 ${YELLOW}(鏃犺璇?${NC}"
+                echo -e "     socks5://1.2.3.4:1080 ${YELLOW}(无认证)${NC}"
                 echo ""
-                echo -e "${GREEN}2. HTTP/HTTPS 浠ｇ悊${NC}"
-                echo -e "   ${YELLOW}鏍煎紡:${NC} http(s)://[鐢ㄦ埛鍚?瀵嗙爜@]鏈嶅姟鍣?绔彛"
-                echo -e "   ${CYAN}绀轰緥:${NC}"
+                echo -e "${GREEN}2. HTTP/HTTPS 代理${NC}"
+                echo -e "   ${YELLOW}格式:${NC} http(s)://[用户名:密码@]服务器:端口"
+                echo -e "   ${CYAN}示例:${NC}"
                 echo -e "     http://user:pass@1.2.3.4:8080"
-                echo -e "     https://1.2.3.4:443 ${YELLOW}(鏃犺璇?${NC}"
+                echo -e "     https://1.2.3.4:443 ${YELLOW}(无认证)${NC}"
                 echo ""
                 echo -e "${GREEN}3. Shadowsocks${NC}"
-                echo -e "   ${YELLOW}鏍煎紡:${NC} ss://base64(鍔犲瘑鏂瑰紡:瀵嗙爜)@鏈嶅姟鍣?绔彛"
-                echo -e "   ${CYAN}绀轰緥:${NC}"
+                echo -e "   ${YELLOW}格式:${NC} ss://base64(加密方式:密码)@服务器:端口"
+                echo -e "   ${CYAN}示例:${NC}"
                 echo -e "     ss://YWVzLTI1Ni1nY206cGFzc3dvcmQ=@1.2.3.4:8388"
                 echo ""
                 echo -e "${GREEN}4. VMess${NC}"
-                echo -e "   ${YELLOW}鏍煎紡:${NC} vmess://base64(JSON閰嶇疆)"
-                echo -e "   ${CYAN}璇存槑:${NC} 鏍囧噯 V2Ray 鍒嗕韩閾炬帴"
+                echo -e "   ${YELLOW}格式:${NC} vmess://base64(JSON配置)"
+                echo -e "   ${CYAN}说明:${NC} 标准 V2Ray 分享链接"
                 echo ""
                 echo -e "${GREEN}5. VLESS${NC}"
-                echo -e "   ${YELLOW}鏍煎紡:${NC} vless://UUID@鏈嶅姟鍣?绔彛?鍙傛暟#澶囨敞"
-                echo -e "   ${CYAN}绀轰緥:${NC}"
+                echo -e "   ${YELLOW}格式:${NC} vless://UUID@服务器:端口?参数#备注"
+                echo -e "   ${CYAN}示例:${NC}"
                 echo -e "     vless://uuid@1.2.3.4:443?security=tls&sni=example.com"
                 echo ""
                 echo -e "${GREEN}6. Trojan${NC}"
-                echo -e "   ${YELLOW}鏍煎紡:${NC} trojan://瀵嗙爜@鏈嶅姟鍣?绔彛?鍙傛暟#澶囨敞"
-                echo -e "   ${CYAN}绀轰緥:${NC}"
+                echo -e "   ${YELLOW}格式:${NC} trojan://密码@服务器:端口?参数#备注"
+                echo -e "   ${CYAN}示例:${NC}"
                 echo -e "     trojan://password@1.2.3.4:443?sni=example.com"
                 echo ""
-                echo -e "${CYAN}鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹?{NC}"
-                echo -e "${YELLOW}鎻愮ず:${NC} 鐩存帴绮樿创瀹屾暣鐨勮妭鐐瑰垎浜摼鎺ュ嵆鍙紝鑴氭湰浼氳嚜鍔ㄨ瘑鍒崗璁被鍨?
-                echo -e "${CYAN}鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹?{NC}"
+                echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+                echo -e "${YELLOW}提示:${NC} 直接粘贴完整的节点分享链接即可，脚本会自动识别协议类型"
+                echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
                 echo ""
-                read -p "绮樿创涓浆閾炬帴: " RELAY_LINK
+                read -p "粘贴中转链接: " RELAY_LINK
                 
                 if [[ -z "$RELAY_LINK" ]]; then
-                    _warn "鏈彁渚涢摼鎺ワ紝涓浆閰嶇疆淇濇寔涓嶅彉"
+                    _warn "未提供链接，中转配置保持不变"
                 else
                     if [[ "$RELAY_LINK" =~ ^socks ]]; then
                         parse_socks_link "$RELAY_LINK"
@@ -534,96 +536,96 @@ setup_relay() {
                     elif [[ "$RELAY_LINK" =~ ^trojan:// ]]; then
                         parse_trojan_link "$RELAY_LINK"
                     else
-                        _error "涓嶆敮鎸佺殑閾炬帴鏍煎紡"
+                        _error "不支持的链接格式"
                     fi
                 fi
                 ;;
             2)
                 if [[ ${#INBOUND_TAGS[@]} -eq 0 ]]; then
-                    _warn "褰撳墠灏氭湭娣诲姞浠讳綍鑺傜偣锛岃鍏堟坊鍔犺妭鐐?
+                    _warn "当前尚未添加任何节点，请先添加节点"
                     continue
                 fi
                 
                 if [[ ${#RELAY_TAGS[@]} -eq 0 ]]; then
-                    _warn "灏氭湭娣诲姞浠讳綍涓浆閾炬帴锛岃鍏堥€夋嫨閫夐」 [1] 娣诲姞涓浆"
+                    _warn "尚未添加任何中转链接，请先选择选项 [1] 添加中转"
                     continue
                 fi
                 
                 echo ""
-                echo -e "${CYAN}閫夋嫨瑕侀厤缃腑杞殑鑺傜偣:${NC}"
+                echo -e "${CYAN}选择要配置中转的节点:${NC}"
                 for i in "${!INBOUND_TAGS[@]}"; do
                     idx=$((i+1))
                     local relay_status="${INBOUND_RELAY_TAGS[$i]}"
-                    local relay_desc="鐩磋繛"
+                    local relay_desc="直连"
                     
                     if [[ "$relay_status" != "direct" ]]; then
                         for j in "${!RELAY_TAGS[@]}"; do
                             if [[ "${RELAY_TAGS[$j]}" == "$relay_status" ]]; then
-                                relay_desc="涓浆: ${RELAY_DESCS[$j]}"
+                                relay_desc="中转: ${RELAY_DESCS[$j]}"
                                 break
                             fi
                         done
                     fi
                     
-                    echo -e "  ${GREEN}[${idx}]${NC} ${INBOUND_PROTOS[$i]}:${INBOUND_PORTS[$i]} 鈫?${YELLOW}${relay_desc}${NC}"
+                    echo -e "  ${GREEN}[${idx}]${NC} ${INBOUND_PROTOS[$i]}:${INBOUND_PORTS[$i]} → ${YELLOW}${relay_desc}${NC}"
                 done
                 echo ""
-                read -p "璇疯緭鍏ヨ妭鐐瑰簭鍙?(杈撳叆 0 杩斿洖): " node_idx
+                read -p "请输入节点序号 (输入 0 返回): " node_idx
                 
                 if [[ "$node_idx" == "0" ]]; then
                     continue
                 fi
                 
                 if ! [[ "$node_idx" =~ ^[0-9]+$ ]] || (( node_idx < 1 || node_idx > ${#INBOUND_TAGS[@]} )); then
-                    _error "鏃犳晥鐨勮妭鐐瑰簭鍙?
+                    _error "无效的节点序号"
                     continue
                 fi
                 
                 local n=$((node_idx-1))
                 
                 echo ""
-                echo -e "${CYAN}閫夋嫨涓浆鏂瑰紡:${NC}"
-                echo -e "  ${GREEN}[0]${NC} 鐩磋繛 (涓嶄娇鐢ㄤ腑杞?"
+                echo -e "${CYAN}选择中转方式:${NC}"
+                echo -e "  ${GREEN}[0]${NC} 直连 (不使用中转)"
                 for i in "${!RELAY_TAGS[@]}"; do
                     idx=$((i+1))
                     echo -e "  ${GREEN}[${idx}]${NC} ${RELAY_DESCS[$i]}"
                 done
                 echo ""
-                read -p "璇烽€夋嫨: " relay_idx
+                read -p "请选择: " relay_idx
                 
                 if [[ "$relay_idx" == "0" ]]; then
                     INBOUND_RELAY_TAGS[$n]="direct"
-                    _success "鑺傜偣宸茶缃负鐩磋繛"
+                    _success "节点已设置为直连"
                 elif [[ "$relay_idx" =~ ^[0-9]+$ ]] && (( relay_idx >= 1 && relay_idx <= ${#RELAY_TAGS[@]} )); then
                     local r=$((relay_idx-1))
                     INBOUND_RELAY_TAGS[$n]="${RELAY_TAGS[$r]}"
-                    _success "鑺傜偣宸茶缃负: ${RELAY_DESCS[$r]}"
+                    _success "节点已设置为: ${RELAY_DESCS[$r]}"
                 else
-                    _error "鏃犳晥閫夋嫨"
+                    _error "无效选择"
                     continue
                 fi
                 ;;
             3)
                 if [[ ${#RELAY_TAGS[@]} -eq 0 ]]; then
-                    _warn "褰撳墠娌℃湁涓浆閾炬帴"
+                    _warn "当前没有中转链接"
                     continue
                 fi
                 
                 echo ""
-                echo -e "${CYAN}鍒犻櫎涓浆閾炬帴:${NC}"
-                echo -e "  ${GREEN}[0]${NC} 鍒犻櫎鍏ㄩ儴涓浆"
+                echo -e "${CYAN}删除中转链接:${NC}"
+                echo -e "  ${GREEN}[0]${NC} 删除全部中转"
                 for i in "${!RELAY_TAGS[@]}"; do
                     idx=$((i+1))
                     echo -e "  ${GREEN}[${idx}]${NC} ${RELAY_DESCS[$i]}"
                 done
                 echo ""
-                read -p "璇烽€夋嫨瑕佸垹闄ょ殑涓浆 (杈撳叆 0 鍒犻櫎鍏ㄩ儴, 杈撳叆 -1 鍙栨秷): " del_idx
+                read -p "请选择要删除的中转 (输入 0 删除全部, 输入 -1 取消): " del_idx
                 
                 if [[ "$del_idx" == "-1" ]]; then
                     continue
                 elif [[ "$del_idx" == "0" ]]; then
                     echo ""
-                    read -p "纭鍒犻櫎鍏ㄩ儴涓浆? (y/N): " confirm
+                    read -p "确认删除全部中转? (y/N): " confirm
                     if [[ "$confirm" =~ ^[Yy]$ ]]; then
                         RELAY_TAGS=()
                         RELAY_JSONS=()
@@ -634,7 +636,7 @@ setup_relay() {
                             INBOUND_RELAY_TAGS[$i]="direct"
                         done
                         
-                        _success "宸插垹闄ゅ叏閮ㄤ腑杞厤缃?
+                        _success "已删除全部中转配置"
                     fi
                 elif [[ "$del_idx" =~ ^[0-9]+$ ]] && (( del_idx >= 1 && del_idx <= ${#RELAY_TAGS[@]} )); then
                     local d=$((del_idx-1))
@@ -642,7 +644,7 @@ setup_relay() {
                     local del_desc="${RELAY_DESCS[$d]}"
                     
                     echo ""
-                    read -p "纭鍒犻櫎涓浆: ${del_desc}? (y/N): " confirm
+                    read -p "确认删除中转: ${del_desc}? (y/N): " confirm
                     if [[ "$confirm" =~ ^[Yy]$ ]]; then
                         unset RELAY_TAGS[$d]
                         unset RELAY_JSONS[$d]
@@ -659,10 +661,10 @@ setup_relay() {
                         done
                         
                         save_relays_to_file
-                        _success "宸插垹闄や腑杞? ${del_desc}"
+                        _success "已删除中转: ${del_desc}"
                     fi
                 else
-                    _error "鏃犳晥閫夋嫨"
+                    _error "无效选择"
                 fi
                 ;;
             4)
@@ -672,7 +674,7 @@ setup_relay() {
                 break
                 ;;
             *)
-                _error "鏃犳晥閫夐」"
+                _error "无效选项"
                 ;;
         esac
     done
@@ -680,9 +682,9 @@ setup_relay() {
 
 clear_relay() {
     echo ""
-    read -p "纭鍒犻櫎鍏ㄩ儴涓浆閰嶇疆骞舵仮澶嶇洿杩? (y/N): " confirm
+    read -p "确认删除全部中转配置并恢复直连? (y/N): " confirm
     if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-        _info "鍙栨秷鎿嶄綔"
+        _info "取消操作"
         return 0
     fi
     
@@ -697,11 +699,11 @@ clear_relay() {
         done
     fi
     
-    _success "宸插垹闄ゅ叏閮ㄤ腑杞厤缃紝褰撳墠涓虹洿杩炴ā寮?
+    _success "已删除全部中转配置，当前为直连模式"
 }
 
 # ============================================================
-# 绔彛杞彂绠＄悊妯″潡 (淇濈暀鍘熸湁鍔熻兘)
+# 端口转发管理模块 (保留原有功能)
 # ============================================================
 
 PF_METADATA_FILE="${RELAY_AUX_DIR}/relay_pf.json"
@@ -772,12 +774,12 @@ _pf_enable_forwarding() {
         else
             sed -i 's/^net.ipv4.ip_forward.*/net.ipv4.ip_forward=1/' /etc/sysctl.conf
         fi
-        _info "宸插惎鐢?IPv4 杞彂 (ip_forward=1)"
+        _info "已启用 IPv4 转发 (ip_forward=1)"
     fi
 }
 
 _save_iptables_rules() {
-    _info "姝ｅ湪淇濆瓨 IPTables 瑙勫垯..."
+    _info "正在保存 IPTables 规则..."
     if command -v netfilter-persistent &>/dev/null; then
         netfilter-persistent save >/dev/null 2>&1
     else
@@ -798,13 +800,13 @@ _save_iptables_rules() {
 
 _pf_view() {
     echo ""
-    _info "=== 褰撳墠绔彛杞彂瑙勫垯 ==="
+    _info "=== 当前端口转发规则 ==="
     echo ""
     _pf_ensure_metadata
     
     local count=$(_pf_count)
     if [ "$count" -eq 0 ]; then
-        _warn "鏆傛棤杞彂瑙勫垯"; read -p "  鎸夊洖杞︾户缁?.."; return
+        _warn "暂无转发规则"; read -p "  按回车继续..."; return
     fi
     
     local i=1
@@ -816,14 +818,14 @@ _pf_view() {
         else
             engine_label="${YELLOW}sing-box${NC}"
         fi
-        echo -e "  ${GREEN}[$i]${NC} 銆?{name}銆?鏈満 :${CYAN}${port}${NC} 鈫?${CYAN}${addr}:${tport}${NC}  [${YELLOW}${net_display}${NC}]  寮曟搸: ${engine_label}"
+        echo -e "  ${GREEN}[$i]${NC} 【${name}】 本机 :${CYAN}${port}${NC} → ${CYAN}${addr}:${tport}${NC}  [${YELLOW}${net_display}${NC}]  引擎: ${engine_label}"
         i=$((i+1))
     done < <(jq -r 'to_entries[] | [.key, .value.name, .value.engine, .value.target_addr, (.value.target_port|tostring), .value.network_display] | @tsv' "$PF_METADATA_FILE" 2>/dev/null)
     
     echo ""
-    echo -e "  鍏?${GREEN}${count}${NC} 鏉¤浆鍙戣鍒?
+    echo -e "  共 ${GREEN}${count}${NC} 条转发规则"
     echo ""
-    read -p "  鎸夊洖杞︾户缁?.."
+    read -p "  按回车继续..."
 }
 
 _pf_build_inbound_json() {
@@ -1036,52 +1038,52 @@ _pf_add() {
     fi
 
     if [ "$PF_ENGINE" == "iptables" ]; then
-        _info "=== 娣诲姞绔彛杞彂瑙勫垯 (寮曟搸: iptables DNAT) ==="
+        _info "=== 添加端口转发规则 (引擎: iptables DNAT) ==="
     else
-        _warn "=== 娣诲姞绔彛杞彂瑙勫垯 (寮曟搸: sing-box 鐢ㄦ埛鎬佽浆鍙? ==="
+        _warn "=== 添加端口转发规则 (引擎: sing-box 用户态转发) ==="
     fi
     echo ""
 
     local listen_port
     while true; do
-        read -p "  璇疯緭鍏ユ湰鏈虹洃鍚鍙? " listen_port
+        read -p "  请输入本机监听端口: " listen_port
         if [[ ! "$listen_port" =~ ^[0-9]+$ ]] || [ "$listen_port" -lt 1 ] || [ "$listen_port" -gt 65535 ]; then
-            _error "鏃犳晥绔彛锛岃杈撳叆 1-65535 涔嬮棿鐨勬暟瀛?
+            _error "无效端口，请输入 1-65535 之间的数字"
             continue
         fi
         if _check_port_occupied "$listen_port"; then
-            _error "绔彛 $listen_port 宸茶绯荤粺鍗犵敤锛岃鎹竴涓?
+            _error "端口 $listen_port 已被系统占用，请换一个"
             continue
         fi
         if jq -e ".\"$listen_port\"" "$PF_METADATA_FILE" >/dev/null 2>&1; then
-            _error "绔彛 $listen_port 宸插瓨鍦ㄨ浆鍙戣鍒欙紝璇锋崲涓€涓?
+            _error "端口 $listen_port 已存在转发规则，请换一个"
             continue
         fi
         break
     done
 
     local target_addr
-    read -p "  璇疯緭鍏ョ洰鏍囧湴鍧€ (IP 鎴栧煙鍚?: " target_addr
+    read -p "  请输入目标地址 (IP 或域名): " target_addr
     if [ -z "$target_addr" ]; then
-        _error "鐩爣鍦板潃涓嶈兘涓虹┖"; read -p "  鎸夊洖杞︾户缁?.."; return
+        _error "目标地址不能为空"; read -p "  按回车继续..."; return
     fi
 
     local target_port
-    read -p "  璇疯緭鍏ョ洰鏍囩鍙? " target_port
+    read -p "  请输入目标端口: " target_port
     if [[ ! "$target_port" =~ ^[0-9]+$ ]] || [ "$target_port" -lt 1 ] || [ "$target_port" -gt 65535 ]; then
-        _error "鏃犳晥绔彛"; read -p "  鎸夊洖杞︾户缁?.."; return
+        _error "无效端口"; read -p "  按回车继续..."; return
     fi
 
     echo ""
     local proto_choice
     local network="tcp"
     local network_display="TCP"
-    echo -e "  ${CYAN}璇烽€夋嫨杞彂鍗忚锛?{NC}"
-    echo -e "    ${GREEN}[1]${NC} 浠?TCP"
-    echo -e "    ${GREEN}[2]${NC} 浠?UDP"
+    echo -e "  ${CYAN}请选择转发协议：${NC}"
+    echo -e "    ${GREEN}[1]${NC} 仅 TCP"
+    echo -e "    ${GREEN}[2]${NC} 仅 UDP"
     echo -e "    ${GREEN}[3]${NC} TCP+UDP"
     echo ""
-    read -p "  璇烽€夋嫨 [1-3] (榛樿 1): " proto_choice
+    read -p "  请选择 [1-3] (默认 1): " proto_choice
     case "$proto_choice" in
         2) network="udp"; network_display="UDP" ;;
         3) network="tcp+udp"; network_display="TCP+UDP" ;;
@@ -1089,8 +1091,8 @@ _pf_add() {
     esac
 
     local custom_name
-    read -p "  璇疯緭鍏ュ娉ㄥ悕绉?(鐩存帴鍥炶溅榛樿: 杞彂瑙勫垯-${listen_port}): " custom_name
-    [ -z "$custom_name" ] && custom_name="杞彂瑙勫垯-${listen_port}"
+    read -p "  请输入备注名称 (直接回车默认: 转发规则-${listen_port}): " custom_name
+    [ -z "$custom_name" ] && custom_name="转发规则-${listen_port}"
     custom_name="${custom_name//\"/}"
     custom_name="${custom_name//\\/}"
     custom_name="${custom_name//#/}"
@@ -1099,22 +1101,22 @@ _pf_add() {
         local resolved_payload=""
         resolved_payload=$(_pf_prepare_iptables_target "$target_addr")
         if [ $? -ne 0 ] || [ -z "$resolved_payload" ]; then
-            _error "鐩爣鍦板潃鏃犳硶瑙ｆ瀽涓哄彲鐢ㄧ殑 IPv4/IPv6锛屾棤娉曞垱寤?iptables 杞彂瑙勫垯"
-            read -p "  鎸夊洖杞︾户缁?.."; return
+            _error "目标地址无法解析为可用的 IPv4/IPv6，无法创建 iptables 转发规则"
+            read -p "  按回车继续..."; return
         fi
         local target_family resolved_ip target_is_domain
         IFS=$'\t' read -r target_family resolved_ip target_is_domain <<< "$resolved_payload"
-        [ "$target_is_domain" == "true" ] && _success "鍩熷悕宸茶В鏋? $target_addr -> $resolved_ip (${target_family})"
+        [ "$target_is_domain" == "true" ] && _success "域名已解析: $target_addr -> $resolved_ip (${target_family})"
         _pf_enable_forwarding
         if ! _pf_apply_iptables_rules "add" "$listen_port" "$resolved_ip" "$target_port" "$network" "$target_family"; then
-            _error "iptables 瑙勫垯鍐欏叆澶辫触"
-            read -p "  鎸夊洖杞︾户缁?.."; return
+            _error "iptables 规则写入失败"
+            read -p "  按回车继续..."; return
         fi
         _save_iptables_rules
     else
         if ! _pf_apply_singbox_rules "add" "$listen_port" "$target_addr" "$target_port" "$network"; then
-            _error "閰嶇疆鍐欏叆澶辫触"
-            read -p "  鎸夊洖杞︾户缁?.."; return
+            _error "配置写入失败"
+            read -p "  按回车继续..."; return
         fi
         _manage_service restart
     fi
@@ -1122,23 +1124,23 @@ _pf_add() {
     _pf_store_metadata "$listen_port" "$PF_ENGINE" "$custom_name" "$target_addr" "$target_port" "$network" "$network_display"
 
     echo ""
-    _success "绔彛杞彂瑙勫垯宸叉坊鍔犲苟鐢熸晥锛?
-    echo -e "  寮曟搸: ${CYAN}${PF_ENGINE}${NC}"
-    echo -e "  杞彂妯″紡: ${CYAN}${network_display}${NC}"
-    echo -e "  鏈満绔彛: ${GREEN}${listen_port}${NC} -> 鐩爣: ${GREEN}${target_addr}:${target_port}${NC}"
+    _success "端口转发规则已添加并生效！"
+    echo -e "  引擎: ${CYAN}${PF_ENGINE}${NC}"
+    echo -e "  转发模式: ${CYAN}${network_display}${NC}"
+    echo -e "  本机端口: ${GREEN}${listen_port}${NC} -> 目标: ${GREEN}${target_addr}:${target_port}${NC}"
     echo ""
-    read -p "  鎸夊洖杞︾户缁?.."
+    read -p "  按回车继续..."
 }
 
 _pf_delete() {
     echo ""
-    _info "=== 鍒犻櫎绔彛杞彂瑙勫垯 ==="
+    _info "=== 删除端口转发规则 ==="
     echo ""
     _pf_ensure_metadata
 
     local count=$(_pf_count)
     if [ "$count" -eq 0 ]; then
-        _warn "鏆傛棤杞彂瑙勫垯"; read -p "  鎸夊洖杞︾户缁?.."; return
+        _warn "暂无转发规则"; read -p "  按回车继续..."; return
     fi
 
     local ports=()
@@ -1146,14 +1148,14 @@ _pf_delete() {
     while IFS=$'\t' read -r port name engine addr tport net_display; do
         [ -z "$port" ] && continue
         ports+=("$port")
-        echo -e "  ${GREEN}[$i]${NC} 銆?{name}銆?${CYAN}${port}${NC} -> ${CYAN}${addr}:${tport}${NC}  [${YELLOW}${net_display}${NC}]"
+        echo -e "  ${GREEN}[$i]${NC} 【${name}】:${CYAN}${port}${NC} -> ${CYAN}${addr}:${tport}${NC}  [${YELLOW}${net_display}${NC}]"
         i=$((i+1))
     done < <(jq -r 'to_entries[] | [.key, .value.name, .value.engine, .value.target_addr, (.value.target_port|tostring), .value.network_display] | @tsv' "$PF_METADATA_FILE" 2>/dev/null)
 
     echo ""
-    read -p "  璇疯緭鍏ヨ鍒犻櫎鐨勫簭鍙?(0 鍙栨秷): " sel
+    read -p "  请输入要删除的序号 (0 取消): " sel
     if [[ ! "$sel" =~ ^[0-9]+$ ]] || [ "$sel" -lt 1 ] || [ "$sel" -gt "${#ports[@]}" ]; then
-        [ "$sel" != "0" ] && _error "鏃犳晥閫夋嫨"
+        [ "$sel" != "0" ] && _error "无效选择"
         return
     fi
 
@@ -1174,18 +1176,18 @@ _pf_delete() {
     jq "del(.\"$selected_port\")" "$PF_METADATA_FILE" > "${PF_METADATA_FILE}.tmp" \
         && mv "${PF_METADATA_FILE}.tmp" "$PF_METADATA_FILE"
 
-    _success "宸插垹闄ょ鍙?${selected_port} 鐨勮浆鍙戣鍒?
-    read -p "  鎸夊洖杞︾户缁?.."
+    _success "已删除端口 ${selected_port} 的转发规则"
+    read -p "  按回车继续..."
 }
 
 _pf_clear() {
     local count=$(_pf_count)
     if [ "$count" -eq 0 ]; then
-        _warn "鏆傛棤杞彂瑙勫垯"; read -p "  鎸夊洖杞︾户缁?.."; return
+        _warn "暂无转发规则"; read -p "  按回车继续..."; return
     fi
 
     echo ""
-    _warn "纭娓呯┖鍏ㄩ儴 ${count} 鏉＄鍙ｈ浆鍙戣鍒欙紵"
+    _warn "确认清空全部 ${count} 条端口转发规则？"
     read -p "  (y/N): " confirm
     if [ "$confirm" != "y" ]; then return; fi
 
@@ -1206,8 +1208,8 @@ _pf_clear() {
         _manage_service restart
     fi
 
-    _success "鎵€鏈夌鍙ｈ浆鍙戣鍒欏凡娓呯┖"
-    read -p "  鎸夊洖杞︾户缁?.."
+    _success "所有端口转发规则已清空"
+    read -p "  按回车继续..."
 }
 
 _port_forward_menu() {
@@ -1215,31 +1217,32 @@ _port_forward_menu() {
         clear
         local count=$(_pf_count)
         echo -e "${CYAN}"
-        echo "  鈺斺晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
-        echo -e "  鈺?   绔彛杞彂绠＄悊 (褰撳墠瑙勫垯: ${GREEN}${count}${CYAN} 鏉?      鈺?
-        echo "  鈺犫晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
-        echo -e "  鈺? ${GREEN}[1]${CYAN} 娣诲姞杞彂瑙勫垯                     鈺?
-        echo -e "  鈺? ${GREEN}[2]${CYAN} 鏌ョ湅褰撳墠杞彂瑙勫垯                 鈺?
-        echo -e "  鈺? ${GREEN}[3]${NC} 鍒犻櫎杞彂瑙勫垯                     鈺?
-        echo -e "  鈺? ${RED}[4]${NC} 娓呯┖鎵€鏈夎浆鍙戣鍒?                鈺?
-        echo -e "  鈺? ${YELLOW}[0]${CYAN} 杩斿洖涓婄骇鑿滃崟                     鈺?
-        echo "  鈺氣晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
+        echo "  ╔═══════════════════════════════════════╗"
+        echo -e "  ║    端口转发管理 (当前规则: ${GREEN}${count}${CYAN} 条)      ║"
+        echo "  ╠═══════════════════════════════════════╣"
+        echo -e "  ║  ${GREEN}[1]${CYAN} 添加转发规则                     ║"
+        echo -e "  ║  ${GREEN}[2]${CYAN} 查看当前转发规则                 ║"
+        echo -e "  ║  ${GREEN}[3]${NC} 删除转发规则                     ║"
+        echo -e "  ║  ${RED}[4]${NC} 清空所有转发规则                 ║"
+        echo -e "  ║  ${YELLOW}[0]${CYAN} 返回上级菜单                     ║"
+        echo "  ╚═══════════════════════════════════════╝"
         echo -e "${NC}"
         
-        read -p "  璇疯緭鍏ラ€夐」 [0-4]: " pf_choice
+        read -p "  请输入选项 [0-4]: " pf_choice
         case "$pf_choice" in
             1) _pf_add ;;
             2) _pf_view ;;
             3) _pf_delete ;;
             4) _pf_clear ;;
             0) return ;;
-            *) _error "鏃犳晥杈撳叆"; sleep 1 ;;
+            *) _error "无效输入"; sleep 1 ;;
         esac
     done
 }
 
 # ============================================================
-# 涓昏彍鍗?# ============================================================
+# 主菜单
+# ============================================================
 
 _menu() {
     _install_yq
@@ -1256,43 +1259,43 @@ _menu() {
         echo -e "${NC}"
 
         echo -e "${CYAN}"
-        echo "  鈺斺晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
-        echo "  鈺?      singbox-lite 杩涢樁杞彂绠＄悊       鈺?
-        echo "  鈺?          (鏂扮増涓浆绯荤粺)              鈺?
-        echo "  鈺氣晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
+        echo "  ╔═══════════════════════════════════════╗"
+        echo "  ║       singbox-lite 进阶转发管理       ║"
+        echo "  ║           (新版中转系统)              ║"
+        echo "  ╚═══════════════════════════════════════╝"
         echo -e "${NC}"
 
         local os_info="Linux"
         [ -f /etc/os-release ] && os_info=$(grep -E "^NAME=" /etc/os-release | cut -d'"' -f2 | head -1)
         
-        local service_status="${RED}鈼?宸插仠姝?{NC}"
+        local service_status="${RED}○ 已停止${NC}"
         local service_name="sing-box"
         [ -f "/etc/systemd/system/sing-box-relay.service" ] && service_name="sing-box-relay"
         
         if [ "$INIT_SYSTEM" == "systemd" ]; then
-            systemctl is-active --quiet "$service_name" && service_status="${GREEN}鈼?杩愯涓?{NC}"
+            systemctl is-active --quiet "$service_name" && service_status="${GREEN}● 运行中${NC}"
         else
-            rc-service "$service_name" status 2>/dev/null | grep -q "started" && service_status="${GREEN}鈼?杩愯涓?{NC}"
+            rc-service "$service_name" status 2>/dev/null | grep -q "started" && service_status="${GREEN}● 运行中${NC}"
         fi
 
-        echo -e "  绯荤粺鐗堟湰: ${CYAN}${os_info}${NC}"
-        echo -e "  鏈嶅姟鐘舵€? ${service_status}"
+        echo -e "  系统版本: ${CYAN}${os_info}${NC}"
+        echo -e "  服务状态: ${service_status}"
         echo ""
-        echo -e "  ${CYAN}銆愪腑杞鐞嗐€?{NC}"
-        echo -e "    ${GREEN}[1]${NC} 涓浆閰嶇疆绠＄悊"
+        echo -e "  ${CYAN}【中转管理】${NC}"
+        echo -e "    ${GREEN}[1]${NC} 中转配置管理"
         echo ""
-        echo -e "  ${CYAN}銆愮鍙ｈ浆鍙戙€?{NC}"
-        echo -e "    ${GREEN}[2]${NC} 绔彛杞彂绠＄悊"
+        echo -e "  ${CYAN}【端口转发】${NC}"
+        echo -e "    ${GREEN}[2]${NC} 端口转发管理"
         echo ""
-        echo -e "  鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€"
-        echo -e "    ${YELLOW}[0]${NC} 閫€鍑?
+        echo -e "  ─────────────────────────────────────────"
+        echo -e "    ${YELLOW}[0]${NC} 退出"
         echo ""
-        read -p "  璇疯緭鍏ラ€夐」 [0-2]: " choice
+        read -p "  请输入选项 [0-2]: " choice
         case $choice in
             1) setup_relay ;;
             2) _port_forward_menu ;;
             0) break ;;
-            *) _error "鏃犳晥杈撳叆"; sleep 1 ;;
+            *) _error "无效输入"; sleep 1 ;;
         esac
     done
 }
