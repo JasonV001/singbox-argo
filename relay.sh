@@ -705,15 +705,31 @@ generate_config() {
     fi
 
     local temp_config=$(mktemp -t sing-box-relay.XXXXXX)
-    if jq --argjson outbounds "$outbounds" --argjson route "$route_json" \
-        '.outbounds = $outbounds | .route = $route' "${CONFIG_FILE}" > "$temp_config" 2>/dev/null; then
+    local backup_config=$(mktemp -t sing-box-relay.bak.XXXXXX)
+    
+    cp "${CONFIG_FILE}" "$backup_config"
+    
+    local update_outbounds=$(jq ".outbounds = ${outbounds}" "${CONFIG_FILE}" > "$temp_config" 2>&1)
+    local out_result=$?
+    
+    if [[ $out_result -ne 0 ]]; then
+        log_error "更新 outbounds 失败"
+        cp "$backup_config" "${CONFIG_FILE}"
+        rm -f "$temp_config" "$backup_config"
+        return 1
+    fi
+    
+    local update_route=$(jq ".route = ${route_json}" "$temp_config" > "${CONFIG_FILE}" 2>&1)
+    local route_result=$?
+    
+    rm -f "$temp_config" "$backup_config"
+    
+    if [[ $route_result -eq 0 ]]; then
         cp "${CONFIG_FILE}" "${CONFIG_FILE}.bak" 2>/dev/null
-        mv "$temp_config" "${CONFIG_FILE}"
         save_last_success
         log_success "配置文件更新完成"
         return 0
     else
-        rm -f "$temp_config"
         log_error "配置更新失败"
         return 1
     fi
@@ -1337,16 +1353,24 @@ add_inbound_to_config() {
     fi
     
     local temp_config=$(mktemp -t sing-box-relay.XXXXXX)
+    local backup_config=$(mktemp -t sing-box-relay.bak.XXXXXX)
     
-    if jq --argjson new_inbound "$inbound_json" '.inbounds += [$new_inbound]' "${CONFIG_FILE}" > "$temp_config" 2>/dev/null; then
-        cp "${CONFIG_FILE}" "${CONFIG_FILE}.bak" 2>/dev/null
+    cp "${CONFIG_FILE}" "$backup_config"
+    
+    local inbound_escaped=$(echo "$inbound_json" | jq -R . | jq -r .)
+    jq --argjson new_inbound "${inbound_escaped}" '.inbounds += [$new_inbound]' "${CONFIG_FILE}" > "$temp_config" 2>&1
+    local jq_result=$?
+    
+    if [[ $jq_result -eq 0 ]] && [[ -s "$temp_config" ]]; then
         mv "$temp_config" "${CONFIG_FILE}"
+        rm -f "$backup_config"
         save_last_success
         log_success "节点已添加: ${name}"
         load_inbounds_from_config
         return 0
     else
-        rm -f "$temp_config"
+        cp "$backup_config" "${CONFIG_FILE}"
+        rm -f "$temp_config" "$backup_config"
         log_error "添加节点失败"
         return 1
     fi
