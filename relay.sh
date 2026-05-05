@@ -1568,8 +1568,65 @@ show_main_menu() {
     echo -e "  ${GREEN}[6]${NC} 查看节点列表"
     echo -e "  ${GREEN}[7]${NC} 重新加载配置"
     echo -e "  ${GREEN}[8]${NC} 配置文件路径设置"
+    echo -e "  ${GREEN}[9]${NC} 查看当前配置"
     echo ""
     echo -e "  ${GREEN}[0]${NC} 退出"
+    echo ""
+}
+
+show_current_config() {
+    echo ""
+    echo -e "${CYAN}╔═══════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║              ${GREEN}当前配置状态${CYAN}                     ║${NC}"
+    echo -e "${CYAN}╚═══════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    
+    # 1. 检查 sing-box 服务状态
+    echo -e "${YELLOW}===== Sing-Box 服务状态 =====${NC}"
+    if [[ $ALPINE -eq 1 ]]; then
+        rc-service sing-box status 2>&1
+    else
+        systemctl status sing-box -n 10 --no-pager 2>&1 || echo "服务未运行"
+    fi
+    echo ""
+    
+    # 2. 检查配置文件是否存在
+    echo -e "${YELLOW}===== 配置文件 =====${NC}"
+    if [[ -f "${CONFIG_FILE}" ]]; then
+        echo -e "${GREEN}✓ 配置文件存在${NC}: ${CONFIG_FILE}"
+        local file_size=$(du -h "${CONFIG_FILE}" 2>/dev/null || echo "0")
+        echo -e "  大小: $file_size"
+        
+        # 检查是否是有效的 JSON
+        if jq . "${CONFIG_FILE}" > /dev/null 2>&1; then
+            echo -e "${GREEN}✓ JSON 格式有效${NC}"
+        else
+            echo -e "${RED}✗ JSON 格式无效${NC}"
+        fi
+    else
+        echo -e "${RED}✗ 配置文件不存在${NC}: ${CONFIG_FILE}"
+    fi
+    echo ""
+    
+    # 3. 显示 outbounds 和 route 部分
+    if [[ -f "${CONFIG_FILE}" ]] && command -v jq &>/dev/null; then
+        echo -e "${YELLOW}===== 当前配置的 Outbounds =====${NC}"
+        jq '.outbounds' "${CONFIG_FILE}" 2>/dev/null || echo "读取失败"
+        echo ""
+        echo -e "${YELLOW}===== 当前配置的 Route =====${NC}"
+        jq '.route' "${CONFIG_FILE}" 2>/dev/null || echo "读取失败"
+    fi
+    echo ""
+    
+    # 4. 显示 sing-box 监听的端口
+    echo -e "${YELLOW}===== 监听端口 =====${NC}"
+    if command -v ss &>/dev/null; then
+        ss -tlnp 2>/dev/null | grep sing-box || echo "无监听端口"
+    elif command -v netstat &>/dev/null; then
+        netstat -tlnp 2>/dev/null | grep sing-box || echo "无监听端口"
+    else
+        echo "ss/netstat 命令不可用"
+    fi
     echo ""
 }
 
@@ -1782,7 +1839,7 @@ main_menu() {
     local choice
     while true; do
         show_main_menu
-        read -p "请选择 [0-8]: " choice
+        read -p "请选择 [0-9]: " choice
         case $choice in
             1) add_relay_link ;;
             2) manual_add_node ;;
@@ -1792,6 +1849,7 @@ main_menu() {
             6) show_nodes ;;
             7) reload_config ;;
             8) set_custom_path ;;
+            9) show_current_config ;;
             0) echo "再见!"; exit 0 ;;
             *) print_error "无效选择" ;;
         esac
