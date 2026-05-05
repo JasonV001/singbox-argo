@@ -1168,6 +1168,23 @@ configure_node_relay() {
     assign_relay_to_node
 }
 
+reload_config() {
+    log_info "重新加载配置..."
+    load_relays_from_file
+    load_inbounds_from_config 2>/dev/null || true
+    if generate_config; then
+        svc_restart
+        sleep 2
+        if svc_is_active; then
+            log_success "配置已重新加载并应用"
+        else
+            log_warning "配置已更新，但服务可能未正常启动"
+        fi
+    else
+        log_error "配置重新加载失败"
+    fi
+}
+
 delete_relay() {
     [[ ${#RELAY_TAGS[@]} -eq 0 ]] && { log_warning "当前没有中转链接"; return 0; }
 
